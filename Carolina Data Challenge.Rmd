@@ -1,0 +1,94 @@
+---
+title: "Carolina Data Challenge"
+output: html_notebook
+---
+
+```{r}
+library(MASS)
+library(R0)
+library(readr)
+library(tidyverse)
+library(ggplot2)
+library(dynlm)
+library(pander)
+library(raster)
+library(sf)
+library(mapview)
+library(ggmap)
+library(gifski)
+library(gganimate)
+library(maps)
+library(ggthemes)
+library(lubridate)
+library(tibble)
+library(animation)
+library(plyr)
+```
+
+```{r}
+#Must input your own key
+#register_google()
+```
+
+```{r}
+us_counties <- read_csv("us-counties.csv")
+```
+
+```{r}
+durham <- read_csv("OpenAQDurham.csv")
+sanfran <- read_csv("OpenAQSanFran.csv")
+```
+
+Animated GIF of change of air quality and COVID-19 cases from 03/16/20 - 10/02/20
+
+```{r}
+covidcases <- us_counties[us_counties$county == "Durham",]
+covidcases$utc2 <- strptime(covidcases$date, format = "%Y-%m-%d", tz = "UTC")
+
+df1 <- data.frame(covidcases$utc2, covidcases$cases)
+df1 <- rename(df1, replace = c("covidcases.utc2" = "utc2", "covidcases.cases" = "cases"))
+
+dp25$utc2 <- as.POSIXct(strptime(dp25$utc, tz = "UTC", format = "%Y-%m-%d"))
+
+str(dp25$utc2)
+str(df1$utc2)
+cdp25 <- merge(dp25, df1)
+
+mapdurham <- get_map(location = c(lon = mean(cdp25$longitude), lat = mean(cdp25$latitude)), zoom = 12, maptype = "terrain", scale = "auto")
+
+
+map <- ggmap(mapdurham) + geom_point(data = cdp25, aes(x = longitude, y = latitude, size = value, colour = cases), shape = 21) + labs(size = "Micrograms / M^3") + scale_size(range = c(0,50)) + scale_color_gradient(low="blue", high="red") + guides(size = F)
+
+plot(map)
+
+anim <- map + transition_time(cdp25$utc) + labs(title = 'Day: {frame_time}', x = "", y = "") + ease_aes("linear")
+animate(anim, duration = 20)
+```
+
+The plot indicates that there may not be a notable correlation between the concentration of particulate matter under 2.5 microns and the number of reported COVID-19 cases in the area. In other words, this particulate matter value may not be improved by the decrease in human movement observed across the pandemic. In order to more thoroughly explore this, further analysis was conducted between the first-differenced time series' of air quality and COVID cases. The time series of PM2.5 and COVID Cases were first differenced in order to avoid issues of spurious correlation.
+
+Correlation Analysis:
+```{r}
+#Separate the PM2.5 data by location of measurment station in Durham
+bcreek <- cdp25[cdp25$location == "Burdens Creek",]
+armory <- cdp25[cdp25$location == "Durham Armory",]
+
+#Plot the time series of the PM2.5 data by location. From the below plots we see that there does appear to be some stationarity in the two plot. However, we move forward by first-differencing the two series in order to better interpret the correlations with COVID case growth.
+ggplot(data = bcreek) + geom_line(aes(x=utc, y = value))
+ggplot(data = armory) + geom_line(aes(x=utc, y = value))
+
+#First-differenced time series of PM2.5 data by location. From the plots we continue to see sone large changes in measured particulate matter concentrations in very short period of time. We hypothesize this is likely due to a special form of measurement error that occurs in measurement devices that particularly make use of concentration differentials.
+
+bcreekfd <- data.frame(diff(bcreek$value), bcreek$utc[-(length( bcreek$utc))])
+colnames(bcreekfd) <- c("fdvalue", "time")
+
+armoryfd <- data.frame(diff(armory$value), armory$utc[-(length( armory$utc))])
+colnames(armoryfd) <- c("fdvalue", "time")
+
+ggplot(data = bcreekfd) + geom_line(aes(x=time, y = fdvalue))
+ggplot(data = armoryfd) + geom_line(aes(x=time, y = fdvalue))
+
+#Intra-period seasonality within the air quality values was also explored using an auto-correlation analysis. This provided some information on the intra-year fluctuations of air quality.
+
+acf(diff(dp25$value))
+```
